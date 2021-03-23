@@ -22,8 +22,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cruise-automation/k-rail/v3/plugins"
-	"github.com/cruise-automation/k-rail/v3/policies"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/slok/go-http-metrics/middleware/std"
+
+	"github.com/cruise-automation/k-rail/policies"
 	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"sigs.k8s.io/yaml"
@@ -120,6 +122,7 @@ func Run(ctx context.Context) {
 	srv.registerPolicies()
 
 	router := mux.NewRouter()
+	router.Use(std.HandlerProvider("", prometheusMiddleware))
 	router.HandleFunc("/", srv.ValidatingWebhook)
 
 	s := &http.Server{
@@ -147,6 +150,16 @@ func Run(ctx context.Context) {
 			log.Warn("shutting down in 15 seconds")
 			time.Sleep(15 * time.Second)
 			os.Exit(0)
+		}
+	}()
+
+	// serve metrics
+	prometheusServer := http.NewServeMux()
+	prometheusServer.Handle("/metrics", promhttp.Handler())
+	go func() {
+		log.Info("metrics listening at :2112")
+		if err := http.ListenAndServe(":2112", prometheusServer); err != nil {
+			log.Fatalf("error while serving metrics: %s", err)
 		}
 	}()
 
